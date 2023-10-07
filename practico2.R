@@ -5,15 +5,15 @@ library(Hmisc)
 library(TTR)
 library(scales)
 
-#data <- read_csv("C:\\Users\\alder\\Downloads\\base_de_datos\\emails.csv")
+data <- read_csv("C:\\Users\\alder\\Downloads\\base_de_datos\\emails.csv")
 # Establece una semilla aleatoria para que la división sea reproducible
-set.seed(123)
+set.seed(666)
 
 # Crea un vector de índices aleatorios para dividir los datos
 indices <- sample(1:nrow(data), nrow(data))
 
 # Calcula el número de filas para el conjunto de entrenamiento (80%)
-n_entrenamiento <- round(0.8 * nrow(data))
+n_entrenamiento <- round(0.5 * nrow(data))
 
 # Divide los datos en conjuntos de entrenamiento y prueba
 entrenamiento <- data[indices[1:n_entrenamiento], ]
@@ -38,7 +38,7 @@ total_ham <- n_entrenamiento - total_spam
 
 
 # Valor constante 'm'
-m <- 30000  # Puedes ajustar el valor de 'm' según tus necesidades
+m <- 3000  # Puedes ajustar el valor de 'm' según tus necesidades
 
 # Crear un dataframe vacío para almacenar las probabilidades
 probabilidades_df <- data.frame(Palabra = character(0), Probabilidad_1 = numeric(0), Probabilidad_0 = numeric(0))
@@ -50,22 +50,31 @@ for (i in 1:(ncol(entrenamiento) - 1)) {  # Excluyendo la primera y la última c
   palabra_actual <- names(entrenamiento)[i]
   
   # Contar(Wi ∩ Clase) + 1 para 1
-  Conteo_Wi_Clase_1 <- sum(entrenamiento[[i]][entrenamiento$Prediction == 1]) + 1
+  Conteo_Wi_Clase_1 <- (sum(entrenamiento[[i]][entrenamiento$Prediction == 1]) + 1)
+                  
   
   # Contar(Wi ∩ Clase) + 1 para 0
-  Conteo_Wi_Clase_0 <- sum(entrenamiento[[i]][entrenamiento$Prediction == 0]) + 1
+  Conteo_Wi_Clase_0 <- (sum(entrenamiento[[i]][entrenamiento$Prediction == 0]) + 1)
   
   # Contar(Clase) + m para 1
-  Conteo_Clase_1 <- sum(entrenamiento$Prediction == 1) + m
+  Conteo_Clase_1 <- sum(subset(entrenamiento, Prediction == 1)) + m
   
   # Contar(Clase) + m para 0
-  Conteo_Clase_0 <- sum(entrenamiento$Prediction == 0) + m
+  Conteo_Clase_0 <- sum(subset(entrenamiento, Prediction == 0)) + m
   
   # Calcular la probabilidad para 1
   Probabilidad_Spam <- Conteo_Wi_Clase_1 / Conteo_Clase_1
   
   # Calcular la probabilidad para 0
   Probabilidad_Ham <- Conteo_Wi_Clase_0 / Conteo_Clase_0
+  
+  #Logaritmo probabilidades para 1
+  
+  Log_spam <- log(Probabilidad_Ham)
+  
+  #Logaritmo probabilidades para 0
+  
+  Log_ham <- log(Probabilidad_Spam)
   
   if (Probabilidad_Spam > Probabilidad_Ham){
     binario_vector = 1
@@ -75,12 +84,10 @@ for (i in 1:(ncol(entrenamiento) - 1)) {  # Excluyendo la primera y la última c
   }
   
   # Agregar los resultados al dataframe
-  nueva_fila <- data.frame(Palabra = palabra_actual, Probabilidad_1 = Probabilidad_Spam, Probabilidad_0 = Probabilidad_Ham, binario = binario_vector)
+  nueva_fila <- data.frame(Palabra = palabra_actual, Probabilidad_1 = Probabilidad_Spam, Probabilidad_0 = Probabilidad_Ham, binario = binario_vector, Log_spam = Log_spam, Log_ham = Log_ham)
   probabilidades_df <- rbind(probabilidades_df , nueva_fila)
 }
 head(probabilidades_df)
-
-
 
 
 # Crear un dataframe vacío para almacenar los resultados
@@ -107,14 +114,36 @@ for (j in 1:nrow(probabilidades_df)) {
   resultados_df <- rbind(resultados_df, nueva_fila)
 }
 
-for(i in nrow(1:resultados_df)){
-  
-  resultado <- log1pexp(resultados_df$Wi_Spam[i] + log_P_Spam, resultados_df$wi_ham[i] + log_P_Ham)
-  
+log_P_Spam <- total_spam/nrow(entrenamiento)
+log_P_Ham <- total_ham/nrow(entrenamiento)
+
+
+logaddexp <- function(a, b) {
+  max_val <- max(a, b)
+  max_val + log(1 + exp(-abs(a - b)))
 }
 
 
+# Create an empty data frame to store the results
+predict_result <- data.frame()
 
+for (i in seq_len(nrow(probabilidades_df))) {
+  resultado <- logaddexp(probabilidades_df$Log_spam[i] + log_P_Spam, probabilidades_df$Log_ham[i] + log_P_Ham)
+  
+  # Create a new row with the result and add it to predict_result
+  new_row <- data.frame(Resultado = resultado)
+  predict_result <- rbind(predict_result, new_row)
+}
 
+# Create an empty data frame to store the results
+predict_result_2 <- data.frame()
 
-
+for (i in 1:(ncol(entrenamiento) - 1)) {
+  
+  predict_spam <- probabilidades_df$Log_spam[i] + log_P_Spam - predict_result$Resultado[i]
+  predict_ham <- probabilidades_df$Log_ham[i] + log_P_Ham - predict_result$Resultado[i]
+  
+  # Create a new row with pico and pico2 and add it to predict_result_2
+  new_row <- data.frame(Pico = pico, Pico2 = pico2)
+  predict_result_2 <- rbind(predict_result_2, new_row)
+}

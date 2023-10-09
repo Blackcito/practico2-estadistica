@@ -13,7 +13,7 @@ set.seed(666)
 indices <- sample(1:nrow(data), nrow(data))
 
 # Calcula el número de filas para el conjunto de entrenamiento (80%)
-n_entrenamiento <- round(0.5 * nrow(data))
+n_entrenamiento <- round(0.1 * nrow(data))
 
 # Divide los datos en conjuntos de entrenamiento y prueba
 entrenamiento <- data[indices[1:n_entrenamiento], ]
@@ -35,7 +35,15 @@ prueba <- prueba[, -1]
 total_spam <- sum(entrenamiento$Prediction == 1)
 total_ham <- n_entrenamiento - total_spam
 
+log_P_Spam <- total_spam/nrow(entrenamiento)
+log_P_Ham <- total_ham/nrow(entrenamiento)
 
+
+
+
+
+
+##BASE ENTRENAMIENTO
 
 # Valor constante 'm'
 m <- 3000  # Puedes ajustar el valor de 'm' según tus necesidades
@@ -76,13 +84,7 @@ for (i in 1:(ncol(entrenamiento) - 1)) {  # Excluyendo la primera y la última c
   
   Log_ham <- log(Probabilidad_Spam)
   
-  if (Probabilidad_Spam > Probabilidad_Ham){
-    binario_vector = 1
-  } 
-  else{
-    binario_vector = 0
-  }
-  
+
   # Agregar los resultados al dataframe
   nueva_fila <- data.frame(Palabra = palabra_actual, Probabilidad_1 = Probabilidad_Spam, Probabilidad_0 = Probabilidad_Ham, binario = binario_vector, Log_spam = Log_spam, Log_ham = Log_ham)
   probabilidades_df <- rbind(probabilidades_df , nueva_fila)
@@ -90,32 +92,83 @@ for (i in 1:(ncol(entrenamiento) - 1)) {  # Excluyendo la primera y la última c
 head(probabilidades_df)
 
 
+
+
+
+
+##BASE DE PRUEBA
+
+vectores_binarios <- matrix(0, nrow = nrow(entrenamiento), ncol = ncol(entrenamiento) - 1)  # Inicializar matriz de vectores binarios
+
+# Iterar a través de las filas (correos electrónicos) de la base de datos
+for (i in 1:nrow(entrenamiento)) {
+  correo <- entrenamiento[i, -ncol(entrenamiento)]  # Excluir la última columna y obtener el correo actual
+  vectores_binarios[i,] <- as.integer(correo > 0)  # Crear un vector binario: 1 si la frecuencia es mayor que 0, 0 en otro caso
+}
+
+
+
+
+
+#log(P(ωi| Spam)) Calculo
+
 # Crear un dataframe vacío para almacenar los resultados
 resultados_df <- data.frame(
-  Palabra = character(0),
+  correo = character(0),
   Wi_Spam = numeric(0),
   Wi_Ham = numeric(0)
 )
 
 # Iterar a través de las filas del dataframe probabilidades_df
-for (j in 1:nrow(probabilidades_df)) {
+for (i in 1:nrow(vectores_binarios)) {
   
-  # Acceder a los valores necesarios de probabilidades_df
-  binario <- probabilidades_df$binario[j]
-  Probabilidad_1 <- probabilidades_df$Probabilidad_1[j]
-  Probabilidad_0 <- probabilidades_df$Probabilidad_0[j]
+  print(i)
+  for (j in 1:nrow(probabilidades_df)){
+    print(j)
+    
+    # Acceder a los valores necesarios de probabilidades_df
+    binario <- vectores_binarios[i][j]
+    Probabilidad_1 <- probabilidades_df$Probabilidad_1[j]
+    Probabilidad_0 <- probabilidades_df$Probabilidad_0[j]
+    
+    # Calcular los valores Wi_Spam y Wi_Ham
+    ωi_spam <- sum(vectores_binarios[i][j] * log(Probabilidad_1) + (1 - vectores_binarios[i][j]) * log(1 - Probabilidad_1))
+    ωi_ham <- sum(vectores_binarios[i][j] * log(Probabilidad_0) + (1 - vectores_binarios[i][j]) * log(1 - Probabilidad_0))
+    
+    # Agregar los resultados al dataframe resultados_df
+    nueva_fila <- data.frame(correo = data$`Email No.`, Wi_Spam = wi_spam, Wi_Ham = wi_ham)
+    resultados_df <- rbind(resultados_df, nueva_fila)
+    
+  }
   
-  # Calcular los valores Wi_Spam y Wi_Ham
-  wi_spam <- binario * log(Probabilidad_1) + (1 - binario) * log(1 - Probabilidad_1)
-  wi_ham <- binario * log(Probabilidad_0) + (1 - binario) * log(1 - Probabilidad_0)
   
-  # Agregar los resultados al dataframe resultados_df
-  nueva_fila <- data.frame(Palabra = probabilidades_df$Palabra[j], Wi_Spam = wi_spam, Wi_Ham = wi_ham)
-  resultados_df <- rbind(resultados_df, nueva_fila)
 }
 
-log_P_Spam <- total_spam/nrow(entrenamiento)
-log_P_Ham <- total_ham/nrow(entrenamiento)
+
+
+
+# Crear un dataframe vacío para almacenar los resultados
+resultados_df <- data.frame(
+  correo = numeric(0),
+  Wi_Spam = numeric(0),
+  Wi_Ham = numeric(0)
+)
+
+# Iterar a través de las filas del dataframe entrenamiento
+for (i in 1:nrow(entrenamiento)) {
+  print(i)
+  
+  # Acceder a la fila actual de vectores_binarios
+  binario <- vectores_binarios[i, ]
+  
+  # Calcular los valores Wi_Spam y Wi_Ham
+  ωi_spam <- sum(binario * log(probabilidades_df$Probabilidad_1) + (1 - binario) * log(1 - probabilidades_df$Probabilidad_1))
+  ωi_ham <- sum(binario * log(probabilidades_df$Probabilidad_0) + (1 - binario) * log(1 - probabilidades_df$Probabilidad_0))
+  
+  # Agregar los resultados a resultados_df
+  nueva_fila <- data.frame(correo = i, Wi_Spam = ωi_spam, Wi_Ham = ωi_ham)
+  resultados_df <- rbind(resultados_df, nueva_fila)
+}
 
 
 logaddexp <- function(a, b) {
@@ -123,27 +176,38 @@ logaddexp <- function(a, b) {
   max_val + log(1 + exp(-abs(a - b)))
 }
 
-
 # Create an empty data frame to store the results
 predict_result <- data.frame()
 
-for (i in seq_len(nrow(probabilidades_df))) {
-  resultado <- logaddexp(probabilidades_df$Log_spam[i] + log_P_Spam, probabilidades_df$Log_ham[i] + log_P_Ham)
+
+
+for (i in 1:nrow(entrenamiento)) {
+  P_ωi <- logaddexp(resultados_df$Wi_Spam[i] + log_P_Spam, resultados_df$Wi_Ham[i] + log_P_Ham)
   
   # Create a new row with the result and add it to predict_result
   new_row <- data.frame(Resultado = resultado)
   predict_result <- rbind(predict_result, new_row)
 }
 
+
+
 # Create an empty data frame to store the results
 predict_result_2 <- data.frame()
 
-for (i in 1:(ncol(entrenamiento) - 1)) {
+for (i in 1:(nrow(entrenamiento))) {
   
-  predict_spam <- probabilidades_df$Log_spam[i] + log_P_Spam - predict_result$Resultado[i]
-  predict_ham <- probabilidades_df$Log_ham[i] + log_P_Ham - predict_result$Resultado[i]
+  predict_spam <- resultados_df$Wi_Spam[i] + log_P_Spam - predict_result$Resultado[i]
+  predict_ham <- resultados_df$Wi_Ham[i] + log_P_Ham - predict_result$Resultado[i]
   
   # Create a new row with pico and pico2 and add it to predict_result_2
-  new_row <- data.frame(Pico = pico, Pico2 = pico2)
+  new_row <- data.frame(predict_spam = predict_spam, predict_ham = predict_ham)
   predict_result_2 <- rbind(predict_result_2, new_row)
 }
+
+# Crear un nuevo dataframe con la columna assSpam_ham
+predict_result_2$assSpam_ham <- ifelse(predict_result_2$predict_spam > predict_result_2$predict_ham, 1, 0)
+
+# Verificar el contenido del dataframe
+head(predict_result_2)
+
+
